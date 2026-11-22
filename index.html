@@ -29,7 +29,11 @@ header .btn{order:3}
 @media(max-width:640px){#srch{order:5;flex-basis:100%;max-width:none}}
 #mapw{position:relative;flex:1;min-height:0}#map{position:absolute;inset:0;background:#dfe5dc}
 .co{width:34px;height:34px;border-radius:50%;background:#fff;border:4px solid var(--ok);box-shadow:0 0 0 2px #fff,0 2px 8px #0006;font-weight:800;font-size:12.5px;line-height:26px;text-align:center;font-variant-numeric:tabular-nums}
-.dot{width:12px;height:12px;border-radius:50%;background:#7b8883;border:2px solid #fff;opacity:.85}
+.dot{width:16px;height:16px;border-radius:50%;background:#7b8883;border:2px solid #fff;box-shadow:0 1px 4px #0005}
+.leaflet-tooltip.tip{padding:0;border:0;background:transparent;box-shadow:none;white-space:normal;font:inherit}.leaflet-tooltip.tip:before{display:none}
+.tw{width:176px;background:#fff;color:var(--ink);border-radius:10px;overflow:hidden;box-shadow:0 6px 20px #0005}
+.tw img{display:block;width:176px;height:110px;object-fit:cover;background:var(--ln)}
+.tw div{padding:7px 10px;line-height:1.25}.tw b{display:block}.tw span{color:var(--mu);font-size:13px}
 #hint,#zh{position:absolute;z-index:900;background:var(--bt);color:var(--fo);padding:8px 12px;border-radius:8px;font-size:14px}
 #hint{left:50%;transform:translateX(-50%);top:10px;display:flex;gap:10px;align-items:center;max-width:92%}
 #zh{left:10px;bottom:34px}
@@ -91,14 +95,14 @@ map.on("locationerror",()=>toast("Position indisponible : autorisez la localisat
 $("#loc").onclick=()=>map.locate({setView:true,maxZoom:16});
 
 async function load(){
-  const my=++seq,b=map.getBounds(),z=map.getZoom();$("#zh").hidden=z>=15;
+  const my=++seq,b=map.getBounds(),z=map.getZoom();$("#zh").hidden=z>=14;
   const{data,error}=await sb.from("bars_stats").select("*").gte("lat",b.getSouth()).lte("lat",b.getNorth()).gte("lng",b.getWest()).lte("lng",b.getEast()).limit(500);
   if(my!=seq)return;
   if(error)return toast("Chargement impossible : "+(error.message||error));
   dbBars=new Map(data.map(r=>[r.id,r]));osm=[];draw();
-  if(z<15)return;
+  if(z<14)return;
   try{ // bars référencés sur OpenStreetMap dans la zone visible
-    const q=`[out:json][timeout:15];nwr["amenity"~"^(bar|pub)$"]["name"](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});out center 150;`;
+    const q=`[out:json][timeout:15];nwr["amenity"~"^(bar|pub)$"]["name"](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});out center 300;`;
     const j=await(await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(q)})).json();
     if(my!=seq)return;
     osm=j.elements.map(e=>({id:null,osm_id:e.type+"/"+e.id,name:e.tags.name,lat:e.lat??(e.center&&e.center.lat),lng:e.lon??(e.center&&e.center.lon),address:[e.tags["addr:housenumber"],e.tags["addr:street"],e.tags["addr:city"]].filter(Boolean).join(" ")})).filter(x=>x.lat!=null);
@@ -111,8 +115,10 @@ function draw(){
   dbBars.forEach(mk)}
 function mk(b){
   const n=+b.moy||0,c=n>=4?"var(--ok)":n>=3?"var(--mid)":"var(--ko)";
-  const icon=n?L.divIcon({className:"",html:`<div class="co" style="border-color:${c}">${fmt(n)}</div>`,iconSize:[34,34],iconAnchor:[17,17]}):L.divIcon({className:"",html:'<div class="dot"></div>',iconSize:[12,12],iconAnchor:[6,6]});
-  L.marker([b.lat,b.lng],{icon,title:b.name,riseOnHover:true}).on("click",()=>show(b)).addTo(gBars)}
+  const icon=n?L.divIcon({className:"",html:`<div class="co" style="border-color:${c}">${fmt(n)}</div>`,iconSize:[34,34],iconAnchor:[17,17],tooltipAnchor:[0,-19]}):L.divIcon({className:"",html:'<div class="dot"></div>',iconSize:[16,16],iconAnchor:[8,8],tooltipAnchor:[0,-10]});
+  const img=b.photo?`<img src="${esc(sb.storage.from("photos").getPublicUrl(b.photo).data.publicUrl)}" alt="">`:"";
+  const tip=`<div class="tw">${img}<div><b>${esc(b.name)}</b><span>${n?"★ "+fmt(n)+" · "+b.n+" avis":"Pas encore noté"}</span></div></div>`;
+  L.marker([b.lat,b.lng],{icon,riseOnHover:true,zIndexOffset:n?500:0}).bindTooltip(tip,{direction:"top",className:"tip",opacity:1}).on("click",()=>show(b)).addTo(gBars)}
 
 /* ---------- Recherche (Entrée) ---------- */
 $("#q").addEventListener("keydown",e=>{if(e.key=="Enter")search()});
