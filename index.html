@@ -36,7 +36,10 @@ header .btn{order:3}
 .tw div{padding:7px 10px;line-height:1.25}.tw b{display:block}.tw span{color:var(--mu);font-size:13px}
 #hint,#zh{position:absolute;z-index:900;background:var(--bt);color:var(--fo);padding:8px 12px;border-radius:8px;font-size:14px}
 #hint{left:50%;transform:translateX(-50%);top:10px;display:flex;gap:10px;align-items:center;max-width:92%}
-#zh{left:10px;bottom:34px}
+#zh{left:10px;bottom:34px;max-width:calc(100% - 20px)}
+#zh .btn{padding:4px 10px;margin-left:8px;font-size:13px}
+.ld{display:inline-block;width:12px;height:12px;border-radius:50%;background:#e9b422;border:2px solid #fff;margin:0 5px -2px 4px}
+.lbl span{position:absolute;top:-8px;white-space:nowrap;font-weight:700;font-size:12px;color:#0f2a25;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;pointer-events:none}
 #sheet{position:absolute;z-index:1100;left:0;right:0;bottom:20px;max-height:72%;overflow:auto;background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -10px 30px #0004}
 @media(min-width:760px){#sheet{top:0;bottom:0;left:auto;width:390px;max-height:none;border-radius:0}}
 #sheet h2{margin:0 34px 2px 0;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.15}#sheet h3{margin:18px 0 6px;font-size:16px}
@@ -66,7 +69,7 @@ header .btn{order:3}
   <div id="mapw">
     <div id="map"></div>
     <div id="hint" hidden>Touchez la carte à l’emplacement du bar <button class="btn sec" id="cx">Annuler</button></div>
-    <div id="zh">Zoomez pour voir tous les bars d’OpenStreetMap</div>
+    <div id="zh">Chargement de la carte…</div>
   </div>
   <aside id="sheet" hidden></aside>
 </div>
@@ -94,25 +97,34 @@ map.on("click",e=>{$("#res").hidden=true;if(!addMode)return;addMode=false;$("#hi
 map.on("locationerror",()=>toast("Position indisponible : autorisez la localisation dans votre navigateur."));
 $("#loc").onclick=()=>map.locate({setView:true,maxZoom:16});
 
+function st(h){$("#zh").innerHTML=h}
+$("#zh").onclick=e=>{if(e.target.id=="rt")load()};
+async function overpass(q){ // serveur principal, puis serveur de secours
+  for(const u of["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"]){
+    try{const r=await fetch(u,{method:"POST",body:"data="+encodeURIComponent(q)});if(r.ok)return await r.json()}catch{}}
+  throw new Error("overpass")}
 async function load(){
-  const my=++seq,b=map.getBounds(),z=map.getZoom();$("#zh").hidden=z>=12;
+  const my=++seq,b=map.getBounds(),z=map.getZoom();
   const{data,error}=await sb.from("bars_stats").select("*").gte("lat",b.getSouth()).lte("lat",b.getNorth()).gte("lng",b.getWest()).lte("lng",b.getEast()).limit(500);
   if(my!=seq)return;
   if(error)return toast("Chargement impossible : "+(error.message||error));
   dbBars=new Map(data.map(r=>[r.id,r]));osm=[];draw();
-  if(z<12)return;
+  if(z<12)return st("Zoomez sur une ville pour voir tous les bars d’OpenStreetMap");
+  st("Recherche des bars…");
   try{ // bars référencés sur OpenStreetMap dans la zone visible
-    const q=`[out:json][timeout:25];nwr["amenity"~"^(bar|pub)$"]["name"](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});out center 1500;`;
-    const j=await(await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(q)})).json();
+    const j=await overpass(`[out:json][timeout:25];nwr["amenity"~"^(bar|pub)$"]["name"](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});out center 1500;`);
     if(my!=seq)return;
     osm=j.elements.map(e=>({id:null,osm_id:e.type+"/"+e.id,name:e.tags.name,lat:e.lat??(e.center&&e.center.lat),lng:e.lon??(e.center&&e.center.lon),address:[e.tags["addr:housenumber"],e.tags["addr:street"],e.tags["addr:city"]].filter(Boolean).join(" ")})).filter(x=>x.lat!=null);
-  }catch{osm=[]}
-  draw()}
+    const nb=draw();
+    st(nb?`<b>${nb} bar${nb>1?"s":""}</b> dans cette zone <i class="ld"></i>pas encore noté${j.elements.length>=1500?" · affichage limité, zoomez pour tout voir":""}`:"Aucun bar dans cette zone. Déplacez ou dézoomez la carte.")
+  }catch{if(my==seq)st('Bars OpenStreetMap indisponibles pour le moment <button class="btn" id="rt">Réessayer</button>')}}
 function draw(){
-  gBars.clearLayers();
+  gBars.clearLayers();let k=0;const z=map.getZoom();
   const known=new Set([...dbBars.values()].map(b=>b.osm_id).filter(Boolean));
-  osm.forEach(o=>{if(!known.has(o.osm_id))mk(o)});
-  dbBars.forEach(mk)}
+  const put=b=>{mk(b);if(z>=16)lbl(b);k++};
+  osm.forEach(o=>{if(!known.has(o.osm_id))put(o)});dbBars.forEach(put);return k}
+function lbl(b){ // nom affiché à côté du point à fort zoom
+  L.marker([b.lat,b.lng],{icon:L.divIcon({className:"lbl",html:`<span style="left:${+b.moy?22:13}px">${esc(b.name)}</span>`,iconSize:[0,0]}),interactive:false,keyboard:false}).addTo(gBars)}
 function mk(b){
   const n=+b.moy||0,c=n>=4?"var(--ok)":n>=3?"var(--mid)":"var(--ko)";
   const img=b.photo?`<img src="${esc(sb.storage.from("photos").getPublicUrl(b.photo).data.publicUrl)}" alt="">`:"";
