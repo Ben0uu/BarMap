@@ -68,7 +68,7 @@ header .btn{order:3}
 </div>
 <div id="toast" role="status"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.109.0"></script>
 <script>
 /* ====== À REMPLIR : Supabase > Project Settings > API ====== */
 const CONFIG={url:"https://mvacdahmlseisaozqtsb.supabase.co/rest/v1/",key:"sb_publishable_ukngS07I43SpdjoUc9PjXw_dtNhZ3it"};
@@ -94,7 +94,7 @@ async function load(){
   const my=++seq,b=map.getBounds(),z=map.getZoom();$("#zh").hidden=z>=15;
   const{data,error}=await sb.from("bars_stats").select("*").gte("lat",b.getSouth()).lte("lat",b.getNorth()).gte("lng",b.getWest()).lte("lng",b.getEast()).limit(500);
   if(my!=seq)return;
-  if(error)return toast("Chargement impossible : vérifiez la configuration Supabase.");
+  if(error)return toast("Chargement impossible : "+(error.message||error));
   dbBars=new Map(data.map(r=>[r.id,r]));osm=[];draw();
   if(z<15)return;
   try{ // bars référencés sur OpenStreetMap dans la zone visible
