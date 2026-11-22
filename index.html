@@ -17,7 +17,7 @@ body{font:15px/1.45 "Bricolage Grotesque",system-ui,sans-serif;color:var(--ink);
 header{position:relative;z-index:1100;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;background:var(--bt);color:var(--fo)}
 .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:21px;letter-spacing:-.02em;margin-right:auto}
 .logo i{width:20px;height:20px;border-radius:50%;background:var(--lg);box-shadow:inset 0 0 0 4px var(--bt),0 0 0 2px var(--lg)}
-#srch{position:relative;flex:1 1 320px;max-width:520px;order:2}
+#srch{position:relative;flex:1 1 180px;max-width:520px;order:2}
 input,textarea{width:100%;font:inherit;color:var(--ink);padding:10px 12px;border:1px solid var(--ln);border-radius:8px;background:#fff}
 input:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--lg);outline-offset:1px}
 #res{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:#fff;color:var(--ink);border-radius:8px;overflow:hidden;box-shadow:0 10px 30px #0004;max-height:50vh;overflow-y:auto}
@@ -73,19 +73,19 @@ header .btn{order:3}
 <div id="toast" role="status"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.109.0"></script>
+<script src="config.js"></script>
 <script>
-/* ====== À REMPLIR : Supabase > Project Settings > API ====== */
-const CONFIG={url:"https://mvacdahmlseisaozqtsb.supabase.co",key:"sb_publishable_ukngS07I43SpdjoUc9PjXw_dtNhZ3it"};
-/* ========================================================== */
+const CONFIG=window.BARMAP_CONFIG||{url:"https://exemple.supabase.co",key:"manquant"}; // défini dans config.js
 const sb=supabase.createClient(CONFIG.url,CONFIG.key);
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=n=>(+n).toFixed(1).replace(".",",");
 function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove("on"),4000)}
+if(!window.BARMAP_CONFIG)setTimeout(()=>toast("Fichier config.js manquant : créez-le à côté de index.html."),600);
 let session=null,dbBars=new Map(),osm=[],sel=null,addMode=false,draft={r:0,files:[]},seq=0,found=[];
 
 /* ---------- Carte ---------- */
-const map=L.map("map",{attributionControl:false}).setView([46.6,2.4],6);
+const map=L.map("map",{attributionControl:false,preferCanvas:true}).setView([46.6,2.4],6);
 L.control.attribution({position:"bottomleft"}).addTo(map);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
 const gBars=L.layerGroup().addTo(map),gTmp=L.layerGroup().addTo(map);
@@ -95,14 +95,14 @@ map.on("locationerror",()=>toast("Position indisponible : autorisez la localisat
 $("#loc").onclick=()=>map.locate({setView:true,maxZoom:16});
 
 async function load(){
-  const my=++seq,b=map.getBounds(),z=map.getZoom();$("#zh").hidden=z>=14;
+  const my=++seq,b=map.getBounds(),z=map.getZoom();$("#zh").hidden=z>=12;
   const{data,error}=await sb.from("bars_stats").select("*").gte("lat",b.getSouth()).lte("lat",b.getNorth()).gte("lng",b.getWest()).lte("lng",b.getEast()).limit(500);
   if(my!=seq)return;
   if(error)return toast("Chargement impossible : "+(error.message||error));
   dbBars=new Map(data.map(r=>[r.id,r]));osm=[];draw();
-  if(z<14)return;
+  if(z<12)return;
   try{ // bars référencés sur OpenStreetMap dans la zone visible
-    const q=`[out:json][timeout:15];nwr["amenity"~"^(bar|pub)$"]["name"](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});out center 300;`;
+    const q=`[out:json][timeout:25];nwr["amenity"~"^(bar|pub)$"]["name"](${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()});out center 1500;`;
     const j=await(await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(q)})).json();
     if(my!=seq)return;
     osm=j.elements.map(e=>({id:null,osm_id:e.type+"/"+e.id,name:e.tags.name,lat:e.lat??(e.center&&e.center.lat),lng:e.lon??(e.center&&e.center.lon),address:[e.tags["addr:housenumber"],e.tags["addr:street"],e.tags["addr:city"]].filter(Boolean).join(" ")})).filter(x=>x.lat!=null);
@@ -115,10 +115,11 @@ function draw(){
   dbBars.forEach(mk)}
 function mk(b){
   const n=+b.moy||0,c=n>=4?"var(--ok)":n>=3?"var(--mid)":"var(--ko)";
-  const icon=n?L.divIcon({className:"",html:`<div class="co" style="border-color:${c}">${fmt(n)}</div>`,iconSize:[34,34],iconAnchor:[17,17],tooltipAnchor:[0,-19]}):L.divIcon({className:"",html:'<div class="dot"></div>',iconSize:[16,16],iconAnchor:[8,8],tooltipAnchor:[0,-10]});
   const img=b.photo?`<img src="${esc(sb.storage.from("photos").getPublicUrl(b.photo).data.publicUrl)}" alt="">`:"";
   const tip=`<div class="tw">${img}<div><b>${esc(b.name)}</b><span>${n?"★ "+fmt(n)+" · "+b.n+" avis":"Pas encore noté"}</span></div></div>`;
-  L.marker([b.lat,b.lng],{icon,riseOnHover:true,zIndexOffset:n?500:0}).bindTooltip(tip,{direction:"top",className:"tip",opacity:1}).on("click",()=>show(b)).addTo(gBars)}
+  const o={className:"tip",opacity:1,direction:"top"};
+  if(!n)return L.circleMarker([b.lat,b.lng],{radius:8,weight:2.5,color:"#0f2a25",fillColor:"#e9b422",fillOpacity:1,bubblingMouseEvents:false}).bindTooltip(tip,{...o,offset:[0,-9]}).on("click",()=>show(b)).addTo(gBars);
+  L.marker([b.lat,b.lng],{icon:L.divIcon({className:"",html:`<div class="co" style="border-color:${c}">${fmt(n)}</div>`,iconSize:[34,34],iconAnchor:[17,17],tooltipAnchor:[0,-19]}),riseOnHover:true,zIndexOffset:500}).bindTooltip(tip,o).on("click",()=>show(b)).addTo(gBars)}
 
 /* ---------- Recherche (Entrée) ---------- */
 $("#q").addEventListener("keydown",e=>{if(e.key=="Enter")search()});
